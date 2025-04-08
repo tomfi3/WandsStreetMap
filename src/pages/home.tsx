@@ -150,6 +150,12 @@ const Home: React.FC = () => {
       
       <LoadingOverlay visible={isLoading} />
       
+      <div 
+        data-testid="tutorial-button" 
+        className="hidden" 
+        onClick={() => setShowTutorial(true)}
+      ></div>
+      
       <Tutorial
         visible={showTutorial}
         onClose={() => setShowTutorial(false)}

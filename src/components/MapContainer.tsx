@@ -16,17 +16,17 @@ type MapContainerProps = {
   isLoading: boolean;
 };
 
-// Define the Wandsworth borough bounds
-const WANDSWORTH_BOUNDS = [
+// Define the Wandsworth borough bounds (using Leaflet LatLngTuple format)
+const WANDSWORTH_BOUNDS: L.LatLngBoundsLiteral = [
   [51.4232, -0.2392], // Southwest
   [51.4910, -0.1462], // Northeast
 ];
 
 // Define the Wandsworth center coordinates
-const WANDSWORTH_CENTER: [number, number] = [51.4571, -0.1927];
+const WANDSWORTH_CENTER: L.LatLngTuple = [51.4571, -0.1927];
 
 // Define the Wandsworth boundary polygon for visual reference
-const WANDSWORTH_BOUNDARY = [
+const WANDSWORTH_BOUNDARY: L.LatLngTuple[] = [
   [51.4566, -0.2392],
   [51.4910, -0.2109],
   [51.4851, -0.1681],
@@ -36,6 +36,18 @@ const WANDSWORTH_BOUNDARY = [
   [51.4274, -0.2188],
   [51.4566, -0.2392],
 ];
+
+// Color mapping for different road types
+const ROAD_TYPE_COLORS: Record<string, string> = {
+  'Motorway': '#E53E3E', // Red
+  'Primary': '#DD6B20', // Orange
+  'Secondary': '#D69E2E', // Yellow
+  'Tertiary': '#38A169', // Green
+  'Residential': '#3182CE', // Blue
+  'Service': '#805AD5', // Purple
+  'Path': '#718096', // Gray
+  'Other': '#A0AEC0', // Light gray
+};
 
 const MapContainer: React.FC<MapContainerProps> = ({
   onRoadSelect,
@@ -47,6 +59,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const roadLayersRef = useRef<Record<string, L.Polyline>>({});
+  const [showAllRoads, setShowAllRoads] = useState(true);
 
   // Initialize map when component mounts
   useEffect(() => {
@@ -81,6 +94,27 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
     L.polygon(WANDSWORTH_BOUNDARY, boundaryStyle).addTo(map);
 
+    // Add custom button for toggling road visibility
+    const buttonContainer = L.DomUtil.create('div', 'leaflet-bottom leaflet-left');
+    const buttonControl = L.DomUtil.create('div', 'leaflet-control');
+    
+    buttonControl.innerHTML = `
+      <button 
+        class="bg-white p-2 shadow-md rounded-md border border-gray-300 hover:bg-gray-100 text-xs m-2"
+        style="width: auto; height: auto; line-height: 1; display: block;"
+      >
+        ${showAllRoads ? 'Hide Minor Roads' : 'Show All Roads'}
+      </button>
+    `;
+    
+    buttonControl.querySelector('button')?.addEventListener('click', (e: Event) => {
+      e.stopPropagation();
+      setShowAllRoads(!showAllRoads);
+    });
+    
+    buttonContainer.appendChild(buttonControl);
+    map.getContainer().appendChild(buttonContainer);
+
     // Set map reference
     mapRef.current = map;
 
@@ -109,7 +143,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
       map.remove();
       mapRef.current = null;
     };
-  }, [setMapBounds]);
+  }, [setMapBounds, showAllRoads]);
 
   // Add roads to map when roads data changes
   useEffect(() => {
@@ -121,13 +155,30 @@ const MapContainer: React.FC<MapContainerProps> = ({
     });
     roadLayersRef.current = {};
 
+    // Filter minor roads if needed
+    const roadsToDisplay = showAllRoads 
+      ? roads 
+      : roads.filter(road => {
+          return ['Motorway', 'Primary', 'Secondary', 'Tertiary'].includes(road.roadType);
+        });
+
     // Add roads to map
-    roads.forEach((road) => {
+    roadsToDisplay.forEach((road) => {
+      const isSelected = !!selectedRoads[road.id];
+      const defaultColor = ROAD_TYPE_COLORS[road.roadType] || '#3388ff';
+      
       const roadLayer = L.polyline(road.coordinates, {
-        color: selectedRoads[road.id] ? '#F97316' : '#3388ff',
-        weight: selectedRoads[road.id] ? 6 : 3,
-        opacity: selectedRoads[road.id] ? 0.8 : 0.7,
+        color: isSelected ? '#F97316' : defaultColor,
+        weight: isSelected ? 6 : road.roadType === 'Primary' ? 4 : road.roadType === 'Secondary' ? 3 : 2,
+        opacity: isSelected ? 0.8 : 0.7,
       }).addTo(mapRef.current!);
+
+      // Create a tooltip with road info
+      roadLayer.bindTooltip(`
+        <strong>${road.name}</strong><br>
+        Type: ${road.roadType}<br>
+        Length: ${road.length.toFixed(2)} km
+      `, { sticky: true });
 
       // Add click handler to select road
       roadLayer.on('click', () => {
@@ -138,7 +189,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
       roadLayer.on('mouseover', () => {
         if (!selectedRoads[road.id]) {
           roadLayer.setStyle({
-            weight: 5,
+            weight: road.roadType === 'Primary' ? 6 : road.roadType === 'Secondary' ? 5 : 4,
             opacity: 0.9,
           });
         }
@@ -147,7 +198,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
       roadLayer.on('mouseout', () => {
         if (!selectedRoads[road.id]) {
           roadLayer.setStyle({
-            weight: 3,
+            weight: road.roadType === 'Primary' ? 4 : road.roadType === 'Secondary' ? 3 : 2,
             opacity: 0.7,
           });
         }
@@ -156,20 +207,25 @@ const MapContainer: React.FC<MapContainerProps> = ({
       // Store reference to layer
       roadLayersRef.current[road.id] = roadLayer;
     });
-  }, [roads, selectedRoads, onRoadSelect, isLoading]);
+  }, [roads, selectedRoads, onRoadSelect, isLoading, showAllRoads]);
 
   // Update road styles when selection changes
   useEffect(() => {
     Object.entries(roadLayersRef.current).forEach(([roadId, layer]) => {
       const isSelected = !!selectedRoads[roadId];
+      const road = roads.find(r => r.id === roadId);
       
-      layer.setStyle({
-        color: isSelected ? '#F97316' : '#3388ff',
-        weight: isSelected ? 6 : 3,
-        opacity: isSelected ? 0.8 : 0.7,
-      });
+      if (road) {
+        const defaultColor = ROAD_TYPE_COLORS[road.roadType] || '#3388ff';
+        
+        layer.setStyle({
+          color: isSelected ? '#F97316' : defaultColor,
+          weight: isSelected ? 6 : road.roadType === 'Primary' ? 4 : road.roadType === 'Secondary' ? 3 : 2,
+          opacity: isSelected ? 0.8 : 0.7,
+        });
+      }
     });
-  }, [selectedRoads]);
+  }, [selectedRoads, roads]);
 
   return (
     <div 
