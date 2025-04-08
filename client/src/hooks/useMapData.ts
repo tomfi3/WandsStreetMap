@@ -15,10 +15,26 @@ export function useRoadsByBounds(bounds: {
       
       const { swLat, swLng, neLat, neLng } = bounds;
       const url = `/api/roads?swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}`;
-      const response = await apiRequest('GET', url);
-      return response.json();
+      
+      try {
+        const response = await apiRequest('GET', url);
+        const data = await response.json();
+        
+        if (!data.roads || !Array.isArray(data.roads)) {
+          console.error('Invalid response format from API:', data);
+          return { roads: [] };
+        }
+        
+        return data;
+      } catch (error) {
+        console.error('Error fetching roads data:', error);
+        throw error;
+      }
     },
     enabled: !!bounds,
+    retry: 3, // Retry failed requests up to 3 times
+    staleTime: 30000, // Consider data fresh for 30 seconds
+    gcTime: 300000, // Keep data in cache for 5 minutes
   });
 }
 
