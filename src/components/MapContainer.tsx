@@ -177,66 +177,144 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   // Add roads to map when roads data changes
   useEffect(() => {
-    if (!mapRef.current || isLoading) return;
+    if (!mapRef.current) return;
 
-    // Clear existing road layers
-    Object.values(roadLayersRef.current).forEach((layer) => {
-      layer.remove();
-    });
-    roadLayersRef.current = {};
-
-    // Filter minor roads if needed
-    const roadsToDisplay = showAllRoads 
-      ? roads 
-      : roads.filter(road => {
-          return ['Motorway', 'Primary', 'Secondary', 'Tertiary'].includes(road.roadType);
-        });
-
-    // Add roads to map
-    roadsToDisplay.forEach((road) => {
-      const isSelected = !!selectedRoads[road.id];
-      const defaultColor = ROAD_TYPE_COLORS[road.roadType] || '#3388ff';
+    // Debounce the road layer updates for better performance
+    let updateTimeout: NodeJS.Timeout | null = null;
+    
+    const updateRoads = () => {
+      if (updateTimeout) {
+        clearTimeout(updateTimeout);
+      }
       
-      const roadLayer = L.polyline(road.coordinates, {
-        color: isSelected ? '#F97316' : defaultColor,
-        weight: isSelected ? 6 : road.roadType === 'Primary' ? 4 : road.roadType === 'Secondary' ? 3 : 2,
-        opacity: isSelected ? 0.8 : 0.7,
-      }).addTo(mapRef.current!);
-
-      // Create a tooltip with road info
-      roadLayer.bindTooltip(`
-        <strong>${road.name}</strong><br>
-        Type: ${road.roadType}<br>
-        Length: ${road.length.toFixed(2)} km
-      `, { sticky: true });
-
-      // Add click handler to select road
-      roadLayer.on('click', () => {
-        onRoadSelect(road);
-      });
-
-      // Add hover effects
-      roadLayer.on('mouseover', () => {
-        if (!selectedRoads[road.id]) {
-          roadLayer.setStyle({
-            weight: road.roadType === 'Primary' ? 6 : road.roadType === 'Secondary' ? 5 : 4,
-            opacity: 0.9,
+      updateTimeout = setTimeout(() => {
+        // Clear existing road layers when loading new data (but not during initial loading)
+        if (!isLoading || Object.keys(roadLayersRef.current).length > 0) {
+          Object.values(roadLayersRef.current).forEach((layer) => {
+            layer.remove();
           });
+          roadLayersRef.current = {};
         }
-      });
-
-      roadLayer.on('mouseout', () => {
-        if (!selectedRoads[road.id]) {
-          roadLayer.setStyle({
-            weight: road.roadType === 'Primary' ? 4 : road.roadType === 'Secondary' ? 3 : 2,
-            opacity: 0.7,
+  
+        // Skip rendering during loading unless we don't have any roads displayed
+        if (isLoading && Object.keys(roadLayersRef.current).length > 0) {
+          return;
+        }
+        
+        // Filter roads by type (major roads if 'showAllRoads' is false)
+        // Also limit the total number of roads to prevent performance issues
+        const MAX_ROADS_TO_RENDER = 3000;
+        
+        // Filter by road type
+        let filteredRoads = showAllRoads 
+          ? roads 
+          : roads.filter(road => 
+              ['Motorway', 'Primary', 'Secondary', 'Tertiary'].includes(road.roadType)
+            );
+          
+        // Sort roads so major roads appear on top (visually)
+        filteredRoads.sort((a, b) => {
+          const roadTypeOrder = { 
+            'Motorway': 5, 
+            'Primary': 4, 
+            'Secondary': 3, 
+            'Tertiary': 2, 
+            'Residential': 1, 
+            'Service': 0,
+            'Path': -1,
+            'Other': -2
+          };
+          
+          return (roadTypeOrder[b.roadType as keyof typeof roadTypeOrder] || -2) - 
+                 (roadTypeOrder[a.roadType as keyof typeof roadTypeOrder] || -2);
+        });
+        
+        // Limit number of roads to render
+        if (filteredRoads.length > MAX_ROADS_TO_RENDER) {
+          console.log(`Too many roads (${filteredRoads.length}), limiting to ${MAX_ROADS_TO_RENDER}`);
+          filteredRoads = filteredRoads.slice(0, MAX_ROADS_TO_RENDER);
+        }
+  
+        // Add roads to map efficiently with a batch process
+        let batch: Road[] = [];
+        const BATCH_SIZE = 300;
+        
+        const processBatch = (roadBatch: Road[]) => {
+          roadBatch.forEach((road) => {
+            if (roadLayersRef.current[road.id]) return; // Skip if already added
+            
+            const isSelected = !!selectedRoads[road.id];
+            const defaultColor = ROAD_TYPE_COLORS[road.roadType] || '#3388ff';
+            
+            const roadLayer = L.polyline(road.coordinates, {
+              color: isSelected ? '#F97316' : defaultColor,
+              weight: isSelected ? 6 : road.roadType === 'Primary' ? 4 : 
+                    road.roadType === 'Secondary' ? 3 : 
+                    road.roadType === 'Tertiary' ? 2 : 1.5,
+              opacity: isSelected ? 0.8 : 0.7,
+            }).addTo(mapRef.current!);
+  
+            // Create a tooltip with road info
+            roadLayer.bindTooltip(`
+              <strong>${road.name}</strong><br>
+              Type: ${road.roadType}<br>
+              Length: ${road.length.toFixed(2)} km
+            `, { sticky: true });
+  
+            // Add click handler to select road
+            roadLayer.on('click', () => {
+              onRoadSelect(road);
+            });
+  
+            // Add hover effects
+            roadLayer.on('mouseover', () => {
+              if (!selectedRoads[road.id]) {
+                roadLayer.setStyle({
+                  weight: road.roadType === 'Primary' ? 6 : 
+                         road.roadType === 'Secondary' ? 5 : 
+                         road.roadType === 'Tertiary' ? 4 : 3,
+                  opacity: 0.9,
+                });
+              }
+            });
+  
+            roadLayer.on('mouseout', () => {
+              if (!selectedRoads[road.id]) {
+                roadLayer.setStyle({
+                  weight: road.roadType === 'Primary' ? 4 : 
+                         road.roadType === 'Secondary' ? 3 : 
+                         road.roadType === 'Tertiary' ? 2 : 1.5,
+                  opacity: 0.7,
+                });
+              }
+            });
+  
+            // Store reference to layer
+            roadLayersRef.current[road.id] = roadLayer;
           });
-        }
-      });
-
-      // Store reference to layer
-      roadLayersRef.current[road.id] = roadLayer;
-    });
+        };
+        
+        // Process roads in batches to prevent UI freezing
+        filteredRoads.forEach((road, index) => {
+          batch.push(road);
+          
+          if (batch.length === BATCH_SIZE || index === filteredRoads.length - 1) {
+            processBatch(batch);
+            batch = [];
+          }
+        });
+        
+        console.log(`Rendered ${Object.keys(roadLayersRef.current).length} roads on map`);
+      }, 100); // Short delay for batching updates
+    };
+    
+    updateRoads();
+    
+    return () => {
+      if (updateTimeout) {
+        clearTimeout(updateTimeout);
+      }
+    };
   }, [roads, selectedRoads, onRoadSelect, isLoading, showAllRoads]);
 
   // Update road styles when selection changes

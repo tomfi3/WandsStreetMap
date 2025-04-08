@@ -5,13 +5,45 @@ interface LoadingOverlayProps {
   visible: boolean;
 }
 
-const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ visible }) => {
+const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ visible: externalVisible }) => {
+  // Internal state to manage visibility with auto-timeout 
+  const [internalVisible, setInternalVisible] = useState(externalVisible);
   const [loadingText, setLoadingText] = useState('Initializing map data');
   const [dots, setDots] = useState('');
+  const [showSkipButton, setShowSkipButton] = useState(false);
+  
+  // Sync internal visibility with external prop
+  useEffect(() => {
+    if (externalVisible) {
+      setInternalVisible(true);
+    } else {
+      setInternalVisible(false);
+    }
+  }, [externalVisible]);
+  
+  // Auto-close loader after timeout
+  useEffect(() => {
+    if (!externalVisible) return;
+    
+    // Show skip button after a few seconds
+    const skipButtonTimer = setTimeout(() => {
+      setShowSkipButton(true);
+    }, 8000);
+    
+    // Auto-hide after a longer timeout in case the data is loading too long
+    const autoHideTimer = setTimeout(() => {
+      setInternalVisible(false);
+    }, 20000);
+    
+    return () => {
+      clearTimeout(skipButtonTimer);
+      clearTimeout(autoHideTimer);
+    };
+  }, [externalVisible]);
   
   // Create a rotating set of loading messages
   useEffect(() => {
-    if (!visible) return;
+    if (!internalVisible) return;
     
     const loadingMessages = [
       'Fetching road network data',
@@ -28,11 +60,11 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ visible }) => {
     }, 3000);
     
     return () => clearInterval(messageInterval);
-  }, [visible]);
+  }, [internalVisible]);
   
   // Animate loading dots
   useEffect(() => {
-    if (!visible) return;
+    if (!internalVisible) return;
     
     const dotsInterval = setInterval(() => {
       setDots(prev => {
@@ -42,9 +74,13 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ visible }) => {
     }, 400);
     
     return () => clearInterval(dotsInterval);
-  }, [visible]);
+  }, [internalVisible]);
   
-  if (!visible) return null;
+  const handleSkip = () => {
+    setInternalVisible(false);
+  };
+  
+  if (!internalVisible) return null;
   
   return (
     <div className="fixed inset-0 bg-gray-900 bg-opacity-70 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300">
@@ -74,6 +110,15 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ visible }) => {
           <p className="text-xs text-gray-500 mt-4 text-center">
             Using real OpenStreetMap data for accurate road geometries
           </p>
+          
+          {showSkipButton && (
+            <button 
+              onClick={handleSkip}
+              className="mt-6 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md text-sm font-medium transition-colors"
+            >
+              Skip Loading
+            </button>
+          )}
         </div>
       </div>
     </div>
