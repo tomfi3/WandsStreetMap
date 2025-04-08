@@ -13,7 +13,6 @@ type MapContainerProps = {
     neLng: number;
   }) => void;
   roads: Road[];
-  isLoading: boolean;
 };
 
 // Define the Wandsworth borough bounds (using Leaflet LatLngTuple format)
@@ -54,7 +53,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
   selectedRoads,
   setMapBounds,
   roads,
-  isLoading,
 }) => {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -147,7 +145,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   // Add roads to map when roads data changes
   useEffect(() => {
-    if (!mapRef.current || isLoading) return;
+    if (!mapRef.current) return;
 
     // Clear existing road layers
     Object.values(roadLayersRef.current).forEach((layer) => {
@@ -207,7 +205,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
       // Store reference to layer
       roadLayersRef.current[road.id] = roadLayer;
     });
-  }, [roads, selectedRoads, onRoadSelect, isLoading, showAllRoads]);
+  }, [roads, selectedRoads, onRoadSelect, showAllRoads]);
 
   // Update road styles when selection changes
   useEffect(() => {

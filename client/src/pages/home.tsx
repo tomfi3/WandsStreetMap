@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import MapContainer from '@/components/MapContainer';
 import ControlPanel from '@/components/ControlPanel';
 import MobileControls from '@/components/MobileControls';
-import LoadingOverlay from '@/components/LoadingOverlay';
 import Tutorial from '@/components/Tutorial';
 import { useRoadsByBounds, usePreloadWandsworthRoads } from '@/hooks/useMapData';
 import { Road } from '@shared/schema';
@@ -133,7 +132,6 @@ const Home: React.FC = () => {
         selectedRoads={selectedRoads}
         setMapBounds={setMapBounds}
         roads={roads}
-        isLoading={isLoading}
       />
       
       <ControlPanel
@@ -150,8 +148,6 @@ const Home: React.FC = () => {
         onToggleControlPanel={handleToggleControlPanel}
         onReset={handleResetView}
       />
-      
-      <LoadingOverlay visible={isLoading} />
       
       <div 
         data-testid="tutorial-button" 
