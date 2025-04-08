@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
@@ -21,6 +21,21 @@ interface TutorialProps {
 
 const Tutorial: React.FC<TutorialProps> = ({ visible, onClose }) => {
   const [activeTab, setActiveTab] = useState<string>('basics');
+  
+  // Add ESC key handler to close tutorial
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && visible) {
+        onClose();
+      }
+    };
+    
+    document.addEventListener('keydown', handleEscKey);
+    
+    return () => {
+      document.removeEventListener('keydown', handleEscKey);
+    };
+  }, [visible, onClose]);
   
   if (!visible) return null;
   
@@ -210,13 +225,15 @@ const Tutorial: React.FC<TutorialProps> = ({ visible, onClose }) => {
           </div>
         </Tabs>
         
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
+        <div className="p-4 border-t border-gray-200 bg-gray-50 flex flex-col items-center">
           <Button 
-            className="w-full" 
+            size="lg"
+            className="w-full mb-2 bg-primary hover:bg-primary/90 text-white font-bold py-3" 
             onClick={onClose}
           >
             Get Started
           </Button>
+          <span className="text-xs text-gray-500">Click to continue</span>
         </div>
       </div>
     </div>
