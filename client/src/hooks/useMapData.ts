@@ -17,12 +17,34 @@ export function useRoadsByBounds(bounds: {
   neLat: number;
   neLng: number;
 } | null) {
+  const queryClient = useQueryClient();
+  
   return useQuery({
     queryKey: ['/api/roads', bounds ? JSON.stringify(bounds) : null],
     queryFn: async () => {
       if (!bounds) return { roads: [] };
       
       const { swLat, swLng, neLat, neLng } = bounds;
+      
+      // Before making a network request, check if we already have data for the full Wandsworth area
+      const fullCacheKey = ['/api/roads', JSON.stringify(WANDSWORTH_BOUNDS)];
+      const cachedFullData = queryClient.getQueryData(fullCacheKey) as { roads: Road[] } | undefined;
+      
+      if (cachedFullData?.roads?.length) {
+        console.log('Using cached Wandsworth data to filter local view...');
+        
+        // Filter the cached data to only show roads in the current viewport
+        const filteredRoads = cachedFullData.roads.filter(road => {
+          return road.coordinates.some(coord => {
+            const [lat, lng] = coord;
+            return lat >= swLat && lat <= neLat && lng >= swLng && lng <= neLng;
+          });
+        });
+        
+        return { roads: filteredRoads };
+      }
+      
+      // If no cached data is available, fetch from the API
       const url = `/api/roads?swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}`;
       
       try {
@@ -42,8 +64,8 @@ export function useRoadsByBounds(bounds: {
     },
     enabled: !!bounds,
     retry: 3, // Retry failed requests up to 3 times
-    staleTime: 30000, // Consider data fresh for 30 seconds
-    gcTime: 300000, // Keep data in cache for 5 minutes
+    staleTime: 60000, // Consider data fresh for 1 minute
+    gcTime: 3600000, // Keep data in cache for 1 hour
   });
 }
 

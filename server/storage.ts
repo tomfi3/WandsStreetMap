@@ -42,11 +42,128 @@ export class MemStorage implements IStorage {
   private highlights: Map<number, RoadHighlight>;
   private currentId: number;
   private roadCache: Map<string, Road[]>; // Cache roads by bounding box to avoid redundant API calls
+  private masterCache: Road[] | null; // Master cache for all Wandsworth roads
+  private cacheTimestamp: number; // Timestamp of when the cache was last updated
+  private isCacheLoading: boolean; // Flag to track if the cache is currently loading
 
   constructor() {
     this.highlights = new Map();
     this.currentId = 1;
     this.roadCache = new Map();
+    this.masterCache = null;
+    this.cacheTimestamp = 0;
+    this.isCacheLoading = false;
+    
+    // Preload the master cache on startup
+    this.preloadMasterCache();
+  }
+  
+  private async fetchRoadsFromAPI(swLat: number, swLng: number, neLat: number, neLng: number): Promise<Road[]> {
+    // Create Overpass API query for roads in Wandsworth within the given bounds
+    // Formatting: south, west, north, east
+    const overpassQuery = `
+      [out:json];
+      (
+        // First, fetch roads within the bounding box
+        way[highway][name](${swLat},${swLng},${neLat},${neLng});
+        
+        // Alternative approach: Get roads in Wandsworth area
+        // This is a simplified version; in real Overpass QL we'd use area filter
+        way[highway][name](around:1500,51.4571,-0.1927);
+      );
+      out body;
+      >;
+      out skel qt;
+    `;
+    
+    // Fetch road data from Overpass API
+    const response = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `data=${encodeURIComponent(overpassQuery)}`,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Overpass API returned ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Prepare a map of node ID to [lat, lon]
+    const nodes = new Map<number, [number, number]>();
+    data.elements.forEach((element: any) => {
+      if (element.type === 'node') {
+        nodes.set(element.id, [element.lat, element.lon]);
+      }
+    });
+    
+    // Process ways (roads)
+    const roads: Road[] = [];
+    data.elements.forEach((element: any) => {
+      if (element.type === 'way' && element.tags && element.tags.highway) {
+        const coordinates: [number, number][] = [];
+        
+        // Get coordinates for each node in the way
+        element.nodes.forEach((nodeId: number) => {
+          const nodeCoords = nodes.get(nodeId);
+          if (nodeCoords) {
+            coordinates.push(nodeCoords);
+          }
+        });
+        
+        if (coordinates.length > 0) {
+          const roadType = getRoadType(element.tags.highway);
+          const name = element.tags.name || 'Unnamed Road';
+          
+          // Calculate road length using the Haversine formula
+          const length = calculateRoadLength(coordinates);
+          
+          roads.push({
+            id: `road-${element.id}`,
+            osmId: `way/${element.id}`,
+            name,
+            roadType,
+            length,
+            coordinates,
+          });
+        }
+      }
+    });
+    
+    return roads;
+  }
+  
+  private async preloadMasterCache() {
+    if (this.isCacheLoading) return;
+    
+    this.isCacheLoading = true;
+    try {
+      console.log('Preloading master cache of all Wandsworth roads...');
+      // Wandsworth full bounds
+      const bounds = {
+        swLat: 51.4137, 
+        swLng: -0.3020, 
+        neLat: 51.5005, 
+        neLng: -0.0834
+      };
+      
+      const roads = await this.fetchRoadsFromAPI(
+        bounds.swLat, 
+        bounds.swLng, 
+        bounds.neLat, 
+        bounds.neLng
+      );
+      
+      this.masterCache = roads;
+      this.cacheTimestamp = Date.now();
+      console.log(`Master cache loaded with ${roads.length} roads`);
+    } catch (error) {
+      console.error('Error preloading master cache:', error);
+    } finally {
+      this.isCacheLoading = false;
+    }
   }
 
   async saveRoadHighlight(highlight: InsertRoadHighlight): Promise<RoadHighlight> {
@@ -79,83 +196,33 @@ export class MemStorage implements IStorage {
     // Create a cache key for this bounding box (rounded to 4 decimal places for better cache hits)
     const cacheKey = `${swLat.toFixed(4)},${swLng.toFixed(4)},${neLat.toFixed(4)},${neLng.toFixed(4)}`;
     
+    // First, check if we already have this specific area cached
     if (this.roadCache.has(cacheKey)) {
       return this.roadCache.get(cacheKey) || [];
     }
     
+    // Next, if we have the master cache, use that instead of making an API call
+    if (this.masterCache) {
+      console.log('Using master cache to filter roads for the requested area...');
+      
+      // Filter roads from master cache that are within the requested bounds
+      const filteredRoads = this.masterCache.filter(road => {
+        // Check if any part of the road is within the requested bounds
+        return road.coordinates.some(coord => {
+          const [lat, lng] = coord;
+          return lat >= swLat && lat <= neLat && lng >= swLng && lng <= neLng;
+        });
+      });
+      
+      // Cache the filtered result for this specific area
+      this.roadCache.set(cacheKey, filteredRoads);
+      
+      return filteredRoads;
+    }
+    
+    // If neither cache is available, fetch from API
     try {
-      // Create Overpass API query for roads in Wandsworth within the given bounds
-      // Formatting: south, west, north, east
-      const overpassQuery = `
-        [out:json];
-        (
-          // First, fetch roads within the bounding box
-          way[highway][name](${swLat},${swLng},${neLat},${neLng});
-          
-          // Alternative approach: Get roads in Wandsworth area
-          // This is a simplified version; in real Overpass QL we'd use area filter
-          way[highway][name](around:1500,51.4571,-0.1927);
-        );
-        out body;
-        >;
-        out skel qt;
-      `;
-      
-      // Fetch road data from Overpass API
-      const response = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `data=${encodeURIComponent(overpassQuery)}`,
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Overpass API returned ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      // Prepare a map of node ID to [lat, lon]
-      const nodes = new Map<number, [number, number]>();
-      data.elements.forEach((element: any) => {
-        if (element.type === 'node') {
-          nodes.set(element.id, [element.lat, element.lon]);
-        }
-      });
-      
-      // Process ways (roads)
-      const roads: Road[] = [];
-      data.elements.forEach((element: any) => {
-        if (element.type === 'way' && element.tags && element.tags.highway) {
-          const coordinates: [number, number][] = [];
-          
-          // Get coordinates for each node in the way
-          element.nodes.forEach((nodeId: number) => {
-            const nodeCoords = nodes.get(nodeId);
-            if (nodeCoords) {
-              coordinates.push(nodeCoords);
-            }
-          });
-          
-          if (coordinates.length > 0) {
-            const roadType = getRoadType(element.tags.highway);
-            const name = element.tags.name || 'Unnamed Road';
-            
-            // Calculate road length using the Haversine formula
-            const length = calculateRoadLength(coordinates);
-            
-            roads.push({
-              id: `road-${element.id}`,
-              osmId: `way/${element.id}`,
-              name,
-              roadType,
-              length,
-              coordinates,
-            });
-          }
-        }
-      });
+      const roads = await this.fetchRoadsFromAPI(swLat, swLng, neLat, neLng);
       
       // Cache the result
       this.roadCache.set(cacheKey, roads);
