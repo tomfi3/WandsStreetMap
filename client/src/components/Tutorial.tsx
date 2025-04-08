@@ -49,6 +49,25 @@ const Tutorial: React.FC<TutorialProps> = ({ visible, onClose }) => {
             </div>
             <h2 className="text-2xl font-bold text-gray-800">Welcome to Wandsworth Road Highlighter</h2>
           </div>
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={onClose}
+              className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-md transition-colors flex items-center font-medium"
+              aria-label="Skip tutorial"
+            >
+              Skip
+            </button>
+            <button 
+              onClick={onClose}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded-full transition-colors flex items-center justify-center"
+              aria-label="Close tutorial"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
         </div>
         
         <Tabs 
@@ -58,11 +77,22 @@ const Tutorial: React.FC<TutorialProps> = ({ visible, onClose }) => {
           className="w-full"
         >
           <div className="px-6 pt-4">
-            <TabsList className="w-full grid grid-cols-3 mb-2">
-              <TabsTrigger value="basics">Basics</TabsTrigger>
-              <TabsTrigger value="features">Features</TabsTrigger>
-              <TabsTrigger value="tips">Pro Tips</TabsTrigger>
-            </TabsList>
+            <div className="flex flex-col space-y-3">
+              <TabsList className="w-full grid grid-cols-3">
+                <TabsTrigger value="basics">Basics</TabsTrigger>
+                <TabsTrigger value="features">Features</TabsTrigger>
+                <TabsTrigger value="tips">Pro Tips</TabsTrigger>
+              </TabsList>
+              
+              <div className="w-full text-center">
+                <button
+                  className="text-primary font-medium text-sm hover:underline"
+                  onClick={onClose}
+                >
+                  Skip Tutorial →
+                </button>
+              </div>
+            </div>
           </div>
           
           <div className="px-6 pb-6 overflow-y-auto max-h-[calc(80vh-180px)]">
@@ -226,14 +256,16 @@ const Tutorial: React.FC<TutorialProps> = ({ visible, onClose }) => {
         </Tabs>
         
         <div className="p-4 border-t border-gray-200 bg-gray-50 flex flex-col items-center">
-          <Button 
-            size="lg"
-            className="w-full mb-2 bg-primary hover:bg-primary/90 text-white font-bold py-3" 
-            onClick={onClose}
-          >
-            Get Started
-          </Button>
-          <span className="text-xs text-gray-500">Click to continue</span>
+          <div className="w-full relative">
+            <Button 
+              size="lg"
+              className="w-full mb-2 bg-primary hover:bg-primary/90 text-white font-bold py-6 text-xl shadow-lg border-2 border-primary" 
+              onClick={onClose}
+            >
+              <span className="animate-pulse">Click to Get Started</span>
+            </Button>
+            <span className="w-full text-center block text-sm text-gray-600 font-medium">or press ESC to continue</span>
+          </div>
         </div>
       </div>
     </div>
