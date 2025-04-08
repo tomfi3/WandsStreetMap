@@ -22,19 +22,17 @@ const Home: React.FC = () => {
   const [selectedRoad, setSelectedRoad] = useState<Road | null>(null);
   const [totalLength, setTotalLength] = useState(0);
   const [showTutorial, setShowTutorial] = useState(true);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [isPanelVisible, setIsPanelVisible] = useState(!isMobile);
   const [mapBounds, setMapBounds] = useState<{
     swLat: number;
     swLng: number;
     neLat: number;
     neLng: number;
   } | null>(null);
-
-  // Fetch roads data
-  const { data: roadsData, isLoading } = useRoadsByBounds(mapBounds);
-  const roads = roadsData?.roads || [];
-
+  
+  // Handle mobile detection
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isPanelVisible, setIsPanelVisible] = useState(!isMobile);
+  
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
@@ -48,6 +46,10 @@ const Home: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Fetch roads data with debouncing and caching
+  const { data: roadsData, isLoading } = useRoadsByBounds(mapBounds);
+  const roads = roadsData?.roads || [];
 
   // Calculate total length when selectedRoads changes
   useEffect(() => {
