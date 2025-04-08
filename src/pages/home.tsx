@@ -4,7 +4,7 @@ import ControlPanel from '@/components/ControlPanel';
 import MobileControls from '@/components/MobileControls';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import Tutorial from '@/components/Tutorial';
-import { useRoadsByBounds } from '@/hooks/useMapData';
+import { useRoadsByBounds, usePreloadWandsworthRoads } from '@/hooks/useMapData';
 import { Road } from '@shared/schema';
 
 // Define the Wandsworth center coordinates
@@ -31,9 +31,12 @@ const Home: React.FC = () => {
     neLng: number;
   } | null>(null);
 
-  // Fetch roads data
+  // Fetch roads data for the current view
   const { data: roadsData, isLoading } = useRoadsByBounds(mapBounds);
   const roads = roadsData?.roads || [];
+  
+  // Preload all Wandsworth roads in the background
+  usePreloadWandsworthRoads();
 
   // Handle window resize
   useEffect(() => {
