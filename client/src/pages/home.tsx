@@ -29,6 +29,10 @@ const Home: React.FC = () => {
     neLng: number;
   } | null>(null);
   
+  // Fetch roads data with debouncing and caching
+  const { data: roadsData, isLoading } = useRoadsByBounds(mapBounds);
+  const roads = roadsData?.roads || [];
+  
   // Handle mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [isPanelVisible, setIsPanelVisible] = useState(!isMobile);
@@ -46,10 +50,6 @@ const Home: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  // Fetch roads data with debouncing and caching
-  const { data: roadsData, isLoading } = useRoadsByBounds(mapBounds);
-  const roads = roadsData?.roads || [];
 
   // Calculate total length when selectedRoads changes
   useEffect(() => {

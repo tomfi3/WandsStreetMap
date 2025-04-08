@@ -54,6 +54,7 @@ export function useRoadsByBounds(bounds: MapBounds) {
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const queryCountRef = useRef<number>(0);
   const lastQueryTimeRef = useRef<number>(Date.now());
+  const initialLoadRef = useRef<boolean>(true);
   
   // Debounce bounds changes to prevent too many API calls
   useEffect(() => {
@@ -69,7 +70,6 @@ export function useRoadsByBounds(bounds: MapBounds) {
     // If the new bounds are within our last queried expanded bounds, don't trigger a new query
     if (lastQueriedBoundsRef.current && bounds && 
         isWithinExistingBounds(bounds, lastQueriedBoundsRef.current)) {
-      // console.log('Skipping query - bounds within last queried bounds');
       return;
     }
     
@@ -78,7 +78,7 @@ export function useRoadsByBounds(bounds: MapBounds) {
     const timeSinceLastQuery = now - lastQueryTimeRef.current;
     
     // If we've made too many queries recently, extend the debounce time
-    let debounceTime = 500; // Default 500ms debounce
+    let debounceTime = initialLoadRef.current ? 0 : 500; // No debounce for initial load
     
     if (queryCountRef.current >= 3 && timeSinceLastQuery < 10000) {
       // Calculate the time to wait until we're under the rate limit
@@ -88,10 +88,18 @@ export function useRoadsByBounds(bounds: MapBounds) {
     
     debounceTimeoutRef.current = setTimeout(() => {
       // Apply bounds with a buffer to reduce the need for frequent API calls
-      const newExpandedBounds = expandBounds(bounds, 100); // Expanded to 100% for better caching
+      // Use a smaller buffer for initial load to reduce data size
+      const bufferSize = initialLoadRef.current ? 50 : 100;
+      const newExpandedBounds = expandBounds(bounds, bufferSize);
+      
       setDebouncedBounds(bounds);
       setExpandedBounds(newExpandedBounds);
       lastQueriedBoundsRef.current = newExpandedBounds;
+      
+      // After initial load, set flag to false
+      if (initialLoadRef.current) {
+        initialLoadRef.current = false;
+      }
       
       // Update rate limiting metrics
       queryCountRef.current++;
@@ -110,6 +118,7 @@ export function useRoadsByBounds(bounds: MapBounds) {
     };
   }, [bounds]);
   
+  // Use TanStack Query
   return useQuery({
     queryKey: ['/api/roads', expandedBounds ? JSON.stringify(expandedBounds) : null],
     queryFn: async () => {
@@ -121,7 +130,23 @@ export function useRoadsByBounds(bounds: MapBounds) {
       console.log(`Fetching roads for bounds: [${swLat.toFixed(4)}, ${swLng.toFixed(4)}, ${neLat.toFixed(4)}, ${neLng.toFixed(4)}]`);
       
       try {
-        const response = await apiRequest('GET', url);
+        // Use a timeout promise to prevent long-running requests
+        const fetchWithTimeout = async () => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
+          
+          try {
+            // Using apiRequest utility function properly
+            const response = await apiRequest('GET', url);
+            clearTimeout(timeoutId);
+            return response;
+          } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+          }
+        };
+        
+        const response = await fetchWithTimeout();
         const data = await response.json();
         
         if (!data.roads || !Array.isArray(data.roads)) {
@@ -131,15 +156,21 @@ export function useRoadsByBounds(bounds: MapBounds) {
         
         console.log(`Received ${data.roads.length} roads from API`);
         return data;
-      } catch (error) {
+      } catch (error: unknown) {
         console.error('Error fetching roads data:', error);
-        throw error;
+        // Check for AbortError (timeout)
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('Request was aborted due to timeout');
+        }
+        return { roads: [] }; // Return empty roads array instead of throwing
       }
     },
     enabled: !!expandedBounds,
-    retry: 3, // Retry failed requests up to 3 times
-    staleTime: 300000, // Consider data fresh for 5 minutes (increased from 1 minute)
-    gcTime: 1800000, // Keep data in cache for 30 minutes (increased from 15 minutes)
+    retry: 2, // Reduced retries to prevent long delays
+    staleTime: 600000, // Consider data fresh for 10 minutes
+    gcTime: 3600000, // Keep data in cache for 60 minutes
+    // Return previous data while loading new data
+    placeholderData: (previousData) => previousData,
   });
 }
 

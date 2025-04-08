@@ -115,15 +115,26 @@ export class MemStorage implements IStorage {
       const expandedNeLat = neLat + 0.01;
       const expandedNeLng = neLng + 0.01;
       
+      // Determine if we should fetch only major roads or all roads
+      // For initial loading and far-out zoom levels, fetch only major roads
+      const fetchOnlyMajorRoads = !this.roadCache.size || 
+        (expandedNeLat - expandedSwLat > 0.05 || expandedNeLng - expandedSwLng > 0.05);
+      
+      console.log(`[QUERY] Fetching ${fetchOnlyMajorRoads ? 'only major roads' : 'all roads'}`);
+      
       const overpassQuery = `
         [out:json];
         (
-          // First, fetch roads within the expanded bounding box
-          way[highway][name](${expandedSwLat},${expandedSwLng},${expandedNeLat},${expandedNeLng});
+          // Fetch roads within the expanded bounding box
+          ${fetchOnlyMajorRoads ? 
+            // Only major roads if zoomed out or initial load
+            `way[highway~"^(motorway|trunk|primary|secondary|tertiary)$"][name](${expandedSwLat},${expandedSwLng},${expandedNeLat},${expandedNeLng});` :
+            // All named roads when zoomed in
+            `way[highway][name](${expandedSwLat},${expandedSwLng},${expandedNeLat},${expandedNeLng});`
+          }
           
-          // Alternative approach: Get roads in Wandsworth area
-          // This is a simplified version; in real Overpass QL we'd use area filter
-          way[highway][name](around:1500,51.4571,-0.1927);
+          // Always include the main roads in Wandsworth center
+          way[highway~"^(motorway|trunk|primary|secondary)$"](around:1000,51.4571,-0.1927);
         );
         out body;
         >;
