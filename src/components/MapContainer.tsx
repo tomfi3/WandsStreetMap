@@ -127,8 +127,17 @@ const MapContainer: React.FC<MapContainerProps> = ({
       neLng: bounds.getEast(),
     });
 
-    // Update bounds when map moves
-    map.on('moveend', () => {
+    // Update bounds when map moves, but with some optimizations
+    let isMapMoving = false;
+    let updateScheduled = false;
+
+    // Only update when movement ends to prevent excessive updates during panning
+    map.on('movestart', () => {
+      isMapMoving = true;
+    });
+    
+    // Update bounds when map zooms
+    map.on('zoomend', () => {
       const newBounds = map.getBounds();
       setMapBounds({
         swLat: newBounds.getSouth(),
@@ -136,6 +145,27 @@ const MapContainer: React.FC<MapContainerProps> = ({
         neLat: newBounds.getNorth(),
         neLng: newBounds.getEast(),
       });
+    });
+
+    // Update bounds when movement ends
+    map.on('moveend', () => {
+      isMapMoving = false;
+      
+      if (!updateScheduled) {
+        updateScheduled = true;
+        
+        // Use requestAnimationFrame to throttle updates
+        requestAnimationFrame(() => {
+          const newBounds = map.getBounds();
+          setMapBounds({
+            swLat: newBounds.getSouth(),
+            swLng: newBounds.getWest(),
+            neLat: newBounds.getNorth(),
+            neLng: newBounds.getEast(),
+          });
+          updateScheduled = false;
+        });
+      }
     });
 
     // Clean up on unmount
