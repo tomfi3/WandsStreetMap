@@ -76,85 +76,39 @@ export class MemStorage implements IStorage {
   }
 
   async getRoadsByBounds(swLat: number, swLng: number, neLat: number, neLng: number): Promise<Road[]> {
-    // Create a cache key for this bounding box (rounded to 2 decimal places for better cache hits)
-    const cacheKey = `${swLat.toFixed(2)},${swLng.toFixed(2)},${neLat.toFixed(2)},${neLng.toFixed(2)}`;
+    // Create a cache key for this bounding box (rounded to 4 decimal places for better cache hits)
+    const cacheKey = `${swLat.toFixed(4)},${swLng.toFixed(4)},${neLat.toFixed(4)},${neLng.toFixed(4)}`;
     
-    // Check if we have cached roads for these bounds
     if (this.roadCache.has(cacheKey)) {
-      console.log('[CACHE HIT] Using cached road data for bounds', cacheKey);
       return this.roadCache.get(cacheKey) || [];
     }
     
-    // Check if we have roads that include this bounding box in another cached region
-    // This helps reduce API calls for small viewport movements
-    const cacheEntries = Array.from(this.roadCache.entries());
-    for (const [cachedKey, cachedRoads] of cacheEntries) {
-      const [cachedSwLat, cachedSwLng, cachedNeLat, cachedNeLng] = cachedKey.split(',').map((v: string) => parseFloat(v));
-      
-      // If the requested bounds are fully within a cached bounds (with some margin)
-      // then we can return those cached roads instead of making a new request
-      if (
-        swLat >= cachedSwLat - 0.01 && 
-        swLng >= cachedSwLng - 0.01 && 
-        neLat <= cachedNeLat + 0.01 && 
-        neLng <= cachedNeLng + 0.01
-      ) {
-        console.log('[CACHE OVERLAP] Using cached road data that contains the requested bounds');
-        return cachedRoads;
-      }
-    }
-    
     try {
-      // Log the request to help with debugging
-      console.log('[API REQUEST] Fetching road data for bounds', cacheKey);
-      
       // Create Overpass API query for roads in Wandsworth within the given bounds
-      // Expand the bounds slightly to reduce edge-case API calls
-      const expandedSwLat = swLat - 0.01;
-      const expandedSwLng = swLng - 0.01; 
-      const expandedNeLat = neLat + 0.01;
-      const expandedNeLng = neLng + 0.01;
-      
-      // Determine if we should fetch only major roads or all roads
-      // For initial loading and far-out zoom levels, fetch only major roads
-      const fetchOnlyMajorRoads = !this.roadCache.size || 
-        (expandedNeLat - expandedSwLat > 0.05 || expandedNeLng - expandedSwLng > 0.05);
-      
-      console.log(`[QUERY] Fetching ${fetchOnlyMajorRoads ? 'only major roads' : 'all roads'}`);
-      
+      // Formatting: south, west, north, east
       const overpassQuery = `
         [out:json];
         (
-          // Fetch roads within the expanded bounding box
-          ${fetchOnlyMajorRoads ? 
-            // Only major roads if zoomed out or initial load
-            `way[highway~"^(motorway|trunk|primary|secondary|tertiary)$"][name](${expandedSwLat},${expandedSwLng},${expandedNeLat},${expandedNeLng});` :
-            // All named roads when zoomed in
-            `way[highway][name](${expandedSwLat},${expandedSwLng},${expandedNeLat},${expandedNeLng});`
-          }
+          // First, fetch roads within the bounding box
+          way[highway][name](${swLat},${swLng},${neLat},${neLng});
           
-          // Always include the main roads in Wandsworth center
-          way[highway~"^(motorway|trunk|primary|secondary)$"](around:1000,51.4571,-0.1927);
+          // Alternative approach: Get roads in Wandsworth area
+          // This is a simplified version; in real Overpass QL we'd use area filter
+          way[highway][name](around:1500,51.4571,-0.1927);
         );
         out body;
         >;
         out skel qt;
       `;
       
-      // Fetch road data from Overpass API with a timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-      
+      // Fetch road data from Overpass API
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: `data=${encodeURIComponent(overpassQuery)}`,
-        signal: controller.signal
       });
-      
-      clearTimeout(timeoutId);
       
       if (!response.ok) {
         throw new Error(`Overpass API returned ${response.status}: ${response.statusText}`);
